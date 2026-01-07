@@ -1,0 +1,9 @@
+{
+  "run_tag": "base_model",
+  "model_dir": "checkpoints\\base\\best_model",
+  "max_length": 128,
+  "metrics": {
+    "accuracy": 0.2852689010132502,
+    "macro_f1": 0.2821056719361749
+  }
+}
