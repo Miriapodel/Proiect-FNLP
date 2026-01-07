@@ -6,7 +6,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 PYTHON = sys.executable
 
@@ -21,23 +21,24 @@ class RunSpec:
     config: Dict[str, Any]
 
 
-def _slug(v: Any) -> str:
+def clean_string(v):
     s = str(v)
     s = s.replace("/", "-").replace(" ", "").replace("_", "")
     s = s.replace(".", "p")
+    
     return s
 
 
-def build_run_name(cfg: Dict[str, Any]) -> str:
+def build_run_name(cfg):
     return (
-        f"_LR{_slug(cfg['learning_rate'])}"
+        f"_LR{clean_string(cfg['learning_rate'])}"
         f"_E{cfg['num_epochs']}"
-        f"_WD{_slug(cfg['weight_decay'])}"
+        f"_WD{clean_string(cfg['weight_decay'])}"
         f"_S{cfg['seed']}"
     )
 
 
-def run_training(spec: RunSpec) -> None:
+def run_training(spec):
     cmd = [
         PYTHON,
         "-m",
@@ -47,53 +48,50 @@ def run_training(spec: RunSpec) -> None:
         *spec.args,
     ]
 
-    print("\n" + "=" * 100)
-    print(f"RUN: {spec.run_name}")
-    print("CONFIG:", json.dumps(spec.config, indent=2))
-    print("CMD:", " ".join(cmd))
-    print("=" * 100)
-
     subprocess.run(cmd, check=True)
 
 
-def load_experiment_json(run_name: str) -> Dict[str, Any]:
+def load_experiment_json(run_name):
     path = EXPERIMENTS_DIR / f"{run_name}.json"
+    
     if not path.exists():
-        raise FileNotFoundError(
-            f"Expected results file not found: {path}. "
-            f"Did the training script save experiments/{run_name}.json?"
-        )
+        raise FileNotFoundError(f"Expected results file not found: {path}. ")
+        
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def get_score(exp: Dict[str, Any], metric_key: str) -> float:
+def get_score(exp, metric_key):
     metrics = exp.get("test_metrics", {})
+    
     if metric_key not in metrics:
         raise KeyError(
-            f"Metric '{metric_key}' not found in test_metrics. Available keys: {list(metrics.keys())}"
+            f"Metric '{metric_key}' not found in test_metrics"
         )
+        
     return float(metrics[metric_key])
 
 
-def pick_best_run(run_names: List[str], metric_key: str) -> Tuple[str, float, Dict[str, Any]]:
-    best_name: Optional[str] = None
-    best_score: float = float("-inf")
-    best_exp: Optional[Dict[str, Any]] = None
+def pick_best_run(run_names, metric_key):
+    best_name = None
+    best_score = float("-inf")
+    best_exp = None
 
     for name in run_names:
         exp = load_experiment_json(name)
         score = get_score(exp, metric_key)
-        print(f"Run {name:>35} | {metric_key} = {score:.6f}")
+        
         if score > best_score:
             best_score = score
             best_name = name
             best_exp = exp
 
-    assert best_name is not None and best_exp is not None
+    if best_name is None or best_exp is None:
+        raise ValueError("Could not find a best run.")
+
     return best_name, best_score, best_exp
 
 
-def save_best_summary(best_name: str, best_score: float, best_exp: Dict[str, Any], metric_key: str) -> Path:
+def save_best_summary(best_name, best_score, best_exp, metric_key):
     out = EXPERIMENTS_DIR / "best_run.json"
     payload = {
         "selected_by": metric_key,
@@ -102,26 +100,32 @@ def save_best_summary(best_name: str, best_score: float, best_exp: Dict[str, Any
         "best_config": best_exp.get("config", {}),
         "best_test_metrics": best_exp.get("test_metrics", {}),
     }
+    
     EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    
     return out
 
 
-def promote_best_model(best_run_name: str) -> Optional[Path]:
+def promote_best_model(best_run_name):
     src = CHECKPOINTS_DIR / best_run_name / "best_model"
+    
     if not src.exists():
-        print(f"[WARN] Cannot promote model: {src} does not exist. Did you save best_model in training?")
+        print(f"Cannot promote model: {src} does not exist")
         return None
 
     dst = CHECKPOINTS_DIR / "BEST" / "best_model"
+    
     if dst.exists():
         shutil.rmtree(dst)
+        
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst)
+    
     return dst
 
 
-def save_leaderboard(rows: List[Dict[str, Any]]) -> None:
+def save_leaderboard(rows):
     EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
     (EXPERIMENTS_DIR / "leaderboard.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
@@ -134,7 +138,7 @@ def save_leaderboard(rows: List[Dict[str, Any]]) -> None:
             writer.writerows(rows)
 
 
-def generate_specs(search_space: Dict[str, List[Any]], *, fp16: bool = True, limit: Optional[int] = None,) -> List[RunSpec]:
+def generate_specs(search_space, fp16):
     keys = list(search_space.keys())
     values = [search_space[k] for k in keys]
 
@@ -142,7 +146,6 @@ def generate_specs(search_space: Dict[str, List[Any]], *, fp16: bool = True, lim
 
     for combo in itertools.product(*values):
         cfg = dict(zip(keys, combo))
-
 
         run_name = build_run_name(cfg)
 
@@ -152,17 +155,15 @@ def generate_specs(search_space: Dict[str, List[Any]], *, fp16: bool = True, lim
             "--weight_decay", str(cfg["weight_decay"]),
             "--seed", str(cfg["seed"]),
         ]
+        
         if fp16:
             args.append("--fp16")
 
         specs.append(RunSpec(run_name=run_name, args=args, config={**cfg, "fp16": fp16}))
 
-        if limit is not None and len(specs) >= limit:
-            break
-
     return specs
 
-def main() -> None:
+def main():
 
     metric_key = "eval_macro_f1"
 
@@ -173,10 +174,7 @@ def main() -> None:
         "seed": [42],
     }
 
-    limit_runs = 40  
-
-    specs = generate_specs(search_space, fp16=True, limit=limit_runs)
-    print(f"Generated {len(specs)} runs.")
+    specs = generate_specs(search_space, True)
 
     for spec in specs:
         run_training(spec)
@@ -199,20 +197,10 @@ def main() -> None:
         leaderboard.append(row)
 
     leaderboard.sort(key=lambda r: r["score"], reverse=True)
+    
     save_leaderboard(leaderboard)
-    print(f"Saved leaderboard to: {(EXPERIMENTS_DIR / 'leaderboard.json').resolve()} and leaderboard.csv")
-
-    print("\n" + "-" * 100)
-    print(f"BEST RUN: {best_name} ({metric_key} = {best_score:.6f})")
-    print("-" * 100)
-
-    best_json_path = save_best_summary(best_name, best_score, best_exp, metric_key=metric_key)
-    print(f"Saved best run summary to: {best_json_path.resolve()}")
-
-    promoted = promote_best_model(best_name)
-    if promoted:
-        print(f"Promoted best model to: {promoted.resolve()}")
-
-
+    save_best_summary(best_name, best_score, best_exp, metric_key=metric_key)
+    promote_best_model(best_name)
+    
 if __name__ == "__main__":
     main()

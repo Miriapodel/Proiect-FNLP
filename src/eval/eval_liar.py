@@ -2,15 +2,15 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
-from datasets import load_dataset, Dataset
+from datasets import load_dataset
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer
 
-LABEL2ID: Dict[str, int] = {
+LABEL_TO_ID = {
     "pants-fire": 0,
     "false": 1,
     "barely-true": 2,
@@ -18,7 +18,7 @@ LABEL2ID: Dict[str, int] = {
     "mostly-true": 4,
     "true": 5,
 }
-ID2LABEL: Dict[int, str] = {v: k for k, v in LABEL2ID.items()}
+ID_TO_LABEL = {v: k for k, v in LABEL_TO_ID.items()}
 
 @dataclass(frozen=True)
 class EvalConfig:
@@ -30,8 +30,8 @@ class EvalConfig:
     batch_size: int
 
 
-def parse_args() -> EvalConfig:
-    p = argparse.ArgumentParser(description="Evaluate a fine-tuned LIAR model on the test split.")
+def parse_args():
+    p = argparse.ArgumentParser()
 
     p.add_argument("--run_name",type=str)
     p.add_argument("--model_dir", type=str)
@@ -58,12 +58,13 @@ def parse_args() -> EvalConfig:
     )
 
 
-def resolve_model_dir(cfg: EvalConfig) -> Path:
+def resolve_model_dir(cfg):
     if cfg.model_dir is not None:
         model_dir = cfg.model_dir
-    else:
-        assert cfg.run_name is not None
+    elif cfg.run_name is not None:
         model_dir = Path("checkpoints") / cfg.run_name / "best_model"
+    else:
+        raise ValueError("Either --model_dir or --run_name must be provided to locate the model directory.")
 
     if not model_dir.exists():
         raise FileNotFoundError(f"Model directory not found: {model_dir}")
@@ -76,7 +77,7 @@ def resolve_model_dir(cfg: EvalConfig) -> Path:
     return model_dir
 
 
-def load_test_dataset(test_path: Path) -> Dataset:
+def load_test_dataset(test_path):
     if not test_path.exists():
         raise FileNotFoundError(f"Test file not found: {test_path}")
 
@@ -91,8 +92,9 @@ def load_test_dataset(test_path: Path) -> Dataset:
     return ds
 
 
-def tokenize_dataset(ds: Dataset, tokenizer: Any, max_length: int) -> Dataset:
-    def tokenize_batch(batch: Dict[str, Any]) -> Dict[str, Any]:
+
+def tokenize_dataset(ds, tokenizer, max_length):
+    def tokenize_batch(batch):
         return tokenizer(
             batch["text"],
             truncation=True,
@@ -110,7 +112,7 @@ def tokenize_dataset(ds: Dataset, tokenizer: Any, max_length: int) -> Dataset:
     return tokenized
 
 
-def predict(trainer: Trainer, tokenized_test: Dataset) -> Tuple[np.ndarray, np.ndarray]:
+def predict(trainer, tokenized_test):
     out = trainer.predict(tokenized_test)
 
     y_true = out.label_ids
@@ -119,26 +121,28 @@ def predict(trainer: Trainer, tokenized_test: Dataset) -> Tuple[np.ndarray, np.n
     return y_true, y_pred
 
 
-def compute_summary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def compute_summary_metrics(y_true, y_pred):
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "macro_f1": float(f1_score(y_true, y_pred, average="macro")),
     }
 
 
-def print_classification_report(y_true: np.ndarray, y_pred: np.ndarray) -> None:
-    target_names = [ID2LABEL[i] for i in range(len(ID2LABEL))]
+def print_classification_report(y_true, y_pred):
+    target_names = [ID_TO_LABEL[i] for i in range(len(ID_TO_LABEL))]
+    
     print("\nPer-class classification report (test):")
     print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
 
 
-def save_confusion_matrix_png(y_true: np.ndarray, y_pred: np.ndarray, out_path: Path, title: str) -> None:
-    labels = list(range(len(ID2LABEL)))
+def save_confusion_matrix_png(y_true, y_pred, out_path, title):
+    labels = list(range(len(ID_TO_LABEL)))
     cm = confusion_matrix(y_true, y_pred, labels=labels)
 
-    class_names = [ID2LABEL[i] for i in labels]
+    class_names = [ID_TO_LABEL[i] for i in labels]
 
     fig = plt.figure()
+    
     plt.imshow(cm)
     plt.title(title)
     plt.xlabel("Predicted")
@@ -152,34 +156,32 @@ def save_confusion_matrix_png(y_true: np.ndarray, y_pred: np.ndarray, out_path: 
             plt.text(j, i, str(cm[i, j]), ha="center", va="center")
 
     plt.tight_layout()
+    
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    
     plt.savefig(out_path, dpi=200)
     plt.close(fig)
 
 
-def save_eval_summary_json(summary: Dict[str, Any], out_path: Path) -> None:
+def save_eval_summary_json(summary, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
-def main() -> None:
+def main():
     cfg = parse_args()
     model_dir = resolve_model_dir(cfg)
 
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Evaluating model from: {model_dir.resolve()}")
-    print(f"Test set: {cfg.test_path.resolve()}")
-    print(f"Max length: {cfg.max_length} | Batch size: {cfg.batch_size}")
 
     test_ds = load_test_dataset(cfg.test_path)
 
     tokenizer = AutoTokenizer.from_pretrained(str(model_dir), use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(
         str(model_dir),
-        num_labels=len(LABEL2ID),
-        label2id=LABEL2ID,
-        id2label=ID2LABEL,
+        num_labels=len(LABEL_TO_ID),
+        LABEL_TO_ID=LABEL_TO_ID,
+        ID_TO_LABEL=ID_TO_LABEL,
     )
 
     tokenized_test = tokenize_dataset(test_ds, tokenizer, cfg.max_length)
@@ -194,23 +196,16 @@ def main() -> None:
     y_true, y_pred = predict(trainer, tokenized_test)
 
     summary_metrics = compute_summary_metrics(y_true, y_pred)
-    print("\nSummary metrics (test):")
-    print(f"  accuracy : {summary_metrics['accuracy']:.4f}")
-    print(f"  macro_f1 : {summary_metrics['macro_f1']:.4f}")
 
     print_classification_report(y_true, y_pred)
 
     run_tag = cfg.run_name if cfg.run_name else model_dir.name
     cm_path = cfg.out_dir / f"liar_confusion_{run_tag}.png"
-    save_confusion_matrix_png(
-        y_true,
-        y_pred,
-        out_path=cm_path,
-        title=f"LIAR Confusion Matrix ({run_tag})",
-    )
-    print(f"\nSaved confusion matrix to: {cm_path.resolve()}")
+    
+    save_confusion_matrix_png(y_true, y_pred, out_path=cm_path, title=f"LIAR Confusion Matrix ({run_tag})",)
 
     summary_path = cfg.out_dir / f"liar_eval_summary_{run_tag}.json"
+    
     save_eval_summary_json(
         summary={
             "run_tag": run_tag,
@@ -220,8 +215,6 @@ def main() -> None:
         },
         out_path=summary_path,
     )
-    print(f"Saved eval summary to: {summary_path.resolve()}")
-
 
 if __name__ == "__main__":
     main()
