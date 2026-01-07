@@ -1,0 +1,24 @@
+{
+  "config": {
+    "model_name": "roberta-base",
+    "max_length": 128,
+    "learning_rate": 2e-05,
+    "train_batch_size": 16,
+    "eval_batch_size": 16,
+    "num_epochs": 4,
+    "weight_decay": 0.02,
+    "seed": 42,
+    "fp16": true,
+    "debug": false,
+    "run_name": "_LR2e-05_E4_WD0p02_S42"
+  },
+  "test_metrics": {
+    "eval_loss": 1.7602695226669312,
+    "eval_accuracy": 0.2712392829306313,
+    "eval_macro_f1": 0.2724274044926968,
+    "eval_runtime": 0.6278,
+    "eval_samples_per_second": 2043.56,
+    "eval_steps_per_second": 129.017,
+    "epoch": 4.0
+  }
+}

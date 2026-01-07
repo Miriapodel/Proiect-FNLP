@@ -1,0 +1,9 @@
+{
+  "run_tag": "best_model",
+  "model_dir": "checkpoints\\_LR2e-05_E3_WD0p02_S42\\best_model",
+  "max_length": 128,
+  "metrics": {
+    "accuracy": 0.2977396726422447,
+    "macro_f1": 0.299659653447633
+  }
+}

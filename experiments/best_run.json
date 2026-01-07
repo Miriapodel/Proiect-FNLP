@@ -1,0 +1,27 @@
+{
+  "selected_by": "eval_macro_f1",
+  "best_run_name": "_LR2e-05_E3_WD0p02_S42",
+  "best_score": 0.299659653447633,
+  "best_config": {
+    "model_name": "roberta-base",
+    "max_length": 128,
+    "learning_rate": 2e-05,
+    "train_batch_size": 16,
+    "eval_batch_size": 16,
+    "num_epochs": 3,
+    "weight_decay": 0.02,
+    "seed": 42,
+    "fp16": true,
+    "debug": false,
+    "run_name": "_LR2e-05_E3_WD0p02_S42"
+  },
+  "best_test_metrics": {
+    "eval_loss": 1.6697160005569458,
+    "eval_accuracy": 0.2977396726422447,
+    "eval_macro_f1": 0.299659653447633,
+    "eval_runtime": 0.6421,
+    "eval_samples_per_second": 1998.149,
+    "eval_steps_per_second": 126.15,
+    "epoch": 3.0
+  }
+}
