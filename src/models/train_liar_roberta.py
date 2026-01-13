@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer, TrainingArguments, set_seed
 
 
-LABEL2ID: Dict[str, int] = {
+LABEL_TO_ID: Dict[str, int] = {
     "pants-fire": 0,
     "false": 1,
     "barely-true": 2,
@@ -19,7 +19,7 @@ LABEL2ID: Dict[str, int] = {
     "mostly-true": 4,
     "true": 5,
 }
-ID2LABEL: Dict[int, str] = {v: k for k, v in LABEL2ID.items()}
+ID_TO_LABEL: Dict[int, str] = {v: k for k, v in LABEL_TO_ID.items()}
 
 
 
@@ -169,8 +169,8 @@ def main() -> None:
     model = AutoModelForSequenceClassification.from_pretrained(
         cfg.model_name,
         num_labels=6,
-        label2id=LABEL2ID,
-        id2label=ID2LABEL,
+        LABEL_TO_ID=LABEL_TO_ID,
+        ID_TO_LABEL=ID_TO_LABEL,
     )
 
     tokenized = prepare_tokenized_dataset(dataset, tokenizer, cfg.max_length, cfg.debug)
