@@ -209,5 +209,7 @@ __marimo__/
 
 
 
-data
-checkpoints
+data/
+rumoureval2019/
+checkpoints/
+experiments/    
