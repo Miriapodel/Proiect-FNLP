@@ -3,7 +3,7 @@
   "model_dir": "model_weights\\BEST\\best_model",
   "max_length": 128,
   "metrics": {
-    "accuracy": 0.2977396726422447,
-    "macro_f1": 0.299659653447633
+    "accuracy": 0.26890101325019483,
+    "macro_f1": 0.26237693044561067
   }
 }
