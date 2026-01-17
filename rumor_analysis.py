@@ -74,7 +74,7 @@ deny_errors = output_df[
 
 notes_path = "report/notes.md"
 with open(notes_path, "a") as f:
-    f.write("\n\n## RumourEval Error Analysis (Person C)\n")
+    f.write("\n\n## RumourEval Error Analysis\n")
     f.write("### Misclassified `support` examples (true=support, pred≠support):\n")
     for _, row in support_errors.iterrows():
         f.write(f"- **Text**: `{row['text'][:100]}...`\n")
