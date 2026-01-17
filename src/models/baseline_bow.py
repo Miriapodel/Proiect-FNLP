@@ -7,12 +7,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    classification_report,
-    confusion_matrix,
-)
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 from sklearn.pipeline import Pipeline
 
 SEED = 42
@@ -58,11 +53,8 @@ def save_confusion_matrix(cm: np.ndarray, out_path: str, title: str):
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             plt.text(
-                j,
-                i,
-                str(int(cm[i, j])),
-                ha="center",
-                va="center",
+                j, i, str(int(cm[i, j])),
+                ha="center", va="center",
                 color="white" if cm[i, j] > thresh else "black",
             )
 
@@ -73,7 +65,8 @@ def save_confusion_matrix(cm: np.ndarray, out_path: str, title: str):
     plt.close()
 
 
-def run_baseline(train_path: str, test_path: str, out_prefix: str, max_features: int, ngram_max: int):
+def run_baseline(train_path: str, test_path: str, out_prefix: str,
+                 max_features: int, ngram_max: int, class_weight):
     train_df = read_jsonl(train_path)
     test_df = read_jsonl(test_path)
 
@@ -85,25 +78,18 @@ def run_baseline(train_path: str, test_path: str, out_prefix: str, max_features:
 
     model = Pipeline(
         steps=[
-            (
-                "tfidf",
-                TfidfVectorizer(
-                    lowercase=True,
-                    strip_accents="unicode",
-                    ngram_range=(1, ngram_max),
-                    max_features=max_features,
-                ),
-            ),
-            (
-                "lr",
-                LogisticRegression(
-                    max_iter=2000,
-                    random_state=SEED,
-                    n_jobs=-1,
-                    multi_class="auto",
-                    class_weight="balanced",
-                ),
-            ),
+            ("tfidf", TfidfVectorizer(
+                lowercase=True,
+                strip_accents="unicode",
+                ngram_range=(1, ngram_max),
+                max_features=max_features,
+            )),
+            ("lr", LogisticRegression(
+                max_iter=2000,
+                random_state=SEED,
+                n_jobs=-1,
+                class_weight=class_weight,
+            )),
         ]
     )
 
@@ -121,21 +107,17 @@ def run_baseline(train_path: str, test_path: str, out_prefix: str, max_features:
 
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(f"Baseline: TF-IDF(1,{ngram_max}), max_features={max_features} + LogisticRegression\n")
-        f.write(f"SEED={SEED}\n\n")
+        f.write(f"SEED={SEED}\n")
+        f.write(f"class_weight={class_weight}\n\n")
         f.write("[TEST]\n")
         f.write(f"Accuracy: {results['test']['accuracy']:.4f}\n")
         f.write(f"Macro-F1:  {results['test']['macro_f1']:.4f}\n\n")
         f.write(results["test"]["classification_report"])
         f.write("\n")
 
-    # save confusion matrix image
     cm = np.array(results["test"]["confusion_matrix"], dtype=int)
     fig_path = os.path.join("report", "figures", f"{out_prefix}_confusion.png")
-    save_confusion_matrix(
-        cm,
-        fig_path,
-        title=f"{out_prefix.replace('_', ' ').title()} – Confusion Matrix",
-    )
+    save_confusion_matrix(cm, fig_path, title=f"{out_prefix.replace('_', ' ').title()} – Confusion Matrix")
 
     print(f"[OK] {out_prefix}: acc={results['test']['accuracy']:.4f} macroF1={results['test']['macro_f1']:.4f}")
     print(f"[OK] Saved: {json_path}")
@@ -145,7 +127,7 @@ def run_baseline(train_path: str, test_path: str, out_prefix: str, max_features:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", required=True, choices=["liar", "rumour"])
+    ap.add_argument("--task", required=True, choices=["liar", "rumour_veracity"])
     ap.add_argument("--max_features", type=int, default=50000)
     ap.add_argument("--ngram_max", type=int, default=2)
     args = ap.parse_args()
@@ -157,15 +139,17 @@ def main():
             out_prefix="liar_baseline",
             max_features=args.max_features,
             ngram_max=args.ngram_max,
+            class_weight="balanced",
         )
 
-    if args.task == "rumour":
+    if args.task == "rumour_veracity":
         run_baseline(
-            train_path="data/rumoureval_processed/train.jsonl",
-            test_path="data/rumoureval_processed/test.jsonl",
-            out_prefix="rumour_baseline",
+            train_path="data/rumoureval_veracity_processed/train.jsonl",
+            test_path="data/rumoureval_veracity_processed/test.jsonl",
+            out_prefix="rumour_veracity_baseline",
             max_features=args.max_features,
             ngram_max=args.ngram_max,
+            class_weight=None,
         )
 
 
