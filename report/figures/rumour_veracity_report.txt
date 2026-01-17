@@ -1,0 +1,16 @@
+RumourEval 2019 - Subtask B
+Model: checkpoints/rumour_veracity_roberta/best_model
+
+Accuracy: 0.3571
+Macro-F1: 0.3478
+
+              precision    recall  f1-score   support
+
+       false     0.6667    0.3333    0.4444        30
+        true     0.5455    0.2727    0.3636        22
+  unverified     0.1333    1.0000    0.2353         4
+
+    accuracy                         0.3571        56
+   macro avg     0.4485    0.5354    0.3478        56
+weighted avg     0.5810    0.3571    0.3978        56
+
