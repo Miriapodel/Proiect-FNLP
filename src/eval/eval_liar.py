@@ -7,8 +7,13 @@ from typing import Optional
 import numpy as np
 import matplotlib.pyplot as plt
 from datasets import load_dataset
+from matplotlib.gridspec import GridSpec
+from sklearn.calibration import calibration_curve, CalibrationDisplay
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer
+from scipy.special import softmax
+import spacy
+import json
 
 LABEL_TO_ID = {
     "pants-fire": 0,
@@ -76,6 +81,36 @@ def resolve_model_dir(cfg):
 
     return model_dir
 
+def mask_NER_tokens(test_path, output_path):
+    nlp = spacy.load("en_core_web_sm")
+    pref = 'NER'
+    counter = 0
+    output_json_list = []
+
+    if not test_path.exists():
+        raise FileNotFoundError(f"Test file not found: {test_path}")
+
+    with open(test_path, 'r') as json_file:
+        json_list = list(json_file)
+
+    for json_str in json_list:
+        sample = json.loads(json_str)
+        doc = nlp(sample["text"])
+        text = []
+        for tok in doc:
+            if tok.ent_type != 0:
+                counter += 1
+                text.append(pref + str(counter))
+            else:
+                text.append(tok.text)
+
+        sample["text"] = " ".join(text)
+        output_json_list.append(sample)
+
+    with output_path.open("w", encoding="utf-8") as f:
+        for example in output_json_list:
+            f.write(json.dumps(example, ensure_ascii=False) + "\n")
+
 
 def load_test_dataset(test_path):
     if not test_path.exists():
@@ -120,6 +155,15 @@ def predict(trainer, tokenized_test):
 
     return y_true, y_pred
 
+def predict_with_confidence(trainer, tokenized_test):
+    out = trainer.predict(tokenized_test)
+
+    y_true = out.label_ids
+    y_pred = np.argmax(out.predictions, axis=-1)
+    probs = softmax(out.predictions, axis=-1)
+    confidence = probs.max(axis=-1)
+
+    return y_true, y_pred, confidence
 
 def compute_summary_metrics(y_true, y_pred):
     return {
@@ -168,11 +212,53 @@ def save_eval_summary_json(summary, out_path):
     out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
+def save_calibration_curves(y_true, y_prob, out_path):
+    fig = plt.figure(figsize=(10, 10))
+    gs = GridSpec(5, 2)
+    colors = plt.get_cmap("Dark2")
+
+    ax_calibration_curve = fig.add_subplot(gs[:2, :2])
+    calibration_displays = {}
+    for i, (label_id, label_name) in enumerate(ID_TO_LABEL.items()):
+        labels_binary = y_true == label_id
+        display = CalibrationDisplay.from_predictions(labels_binary, y_prob, ax=ax_calibration_curve, color=colors(i), name=label_name)
+        calibration_displays[label_name] = display
+
+    ax_calibration_curve.grid()
+    ax_calibration_curve.set_title("Calibration plots")
+
+    grid_positions = [(2, 0), (2, 1), (3, 0), (3, 1), (4, 0), (4,1)]
+    for i, (label_id, label_name) in enumerate(ID_TO_LABEL.items()):
+        row, col = grid_positions[i]
+        ax = fig.add_subplot(gs[row, col])
+
+        ax.hist(
+            calibration_displays[label_name].y_prob,
+            range=(0, 1),
+            bins=10,
+            label=label_name,
+            color=colors(i),
+        )
+        ax.set(title=label_name, xlabel="Mean predicted probability", ylabel="Count")
+
+    plt.tight_layout()
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plt.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
 def main():
     cfg = parse_args()
     model_dir = resolve_model_dir(cfg)
 
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
+
+    # mask NE for evaluation
+    masked_ds_path = 'data/liar_masked_ner/test_masked_ner.jsonl'
+    # mask_NER_tokens(cfg.test_path, Path(masked_ds_path))
+    # test_ds = load_test_dataset(Path(masked_ds_path))
 
     test_ds = load_test_dataset(cfg.test_path)
 
@@ -180,8 +266,8 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained(
         str(model_dir),
         num_labels=len(LABEL_TO_ID),
-        LABEL_TO_ID=LABEL_TO_ID,
-        ID_TO_LABEL=ID_TO_LABEL,
+        label2id=LABEL_TO_ID,
+        id2label=ID_TO_LABEL,
     )
 
     tokenized_test = tokenize_dataset(test_ds, tokenizer, cfg.max_length)
@@ -193,7 +279,10 @@ def main():
         args=None
     )
 
-    y_true, y_pred = predict(trainer, tokenized_test)
+    # y_true, y_pred = predict(trainer, tokenized_test)
+
+    # predict, but return confidence at the same time
+    y_true, y_pred, confidence = predict_with_confidence(trainer, tokenized_test)
 
     summary_metrics = compute_summary_metrics(y_true, y_pred)
 
@@ -201,11 +290,11 @@ def main():
 
     run_tag = cfg.run_name if cfg.run_name else model_dir.name
     cm_path = cfg.out_dir / f"liar_confusion_{run_tag}.png"
-    
+
     save_confusion_matrix_png(y_true, y_pred, out_path=cm_path, title=f"LIAR Confusion Matrix ({run_tag})",)
 
     summary_path = cfg.out_dir / f"liar_eval_summary_{run_tag}.json"
-    
+
     save_eval_summary_json(
         summary={
             "run_tag": run_tag,
@@ -215,6 +304,31 @@ def main():
         },
         out_path=summary_path,
     )
+
+
+    # plot calibration curves and histograms
+    run_tag = cfg.run_name if cfg.run_name else model_dir.name
+    cc_path = cfg.out_dir / f"liar_calibration_{run_tag}.png"
+
+    save_calibration_curves(y_true, confidence, cc_path)
+
+    # save the most confident predictions for misclassified samples and correct predictions
+    top_confidence_ids = np.argsort(confidence)[::-1]
+    misclassified_ids = y_true != y_pred
+
+    top_misclassified = []
+    top_correct = []
+    for top_confidence_id in top_confidence_ids:
+        if top_confidence_id in misclassified_ids and len(top_misclassified) < 10:
+            top_misclassified.append(test_ds[top_confidence_id]['text'])
+        elif top_confidence_id not in misclassified_ids and len(top_correct) < 10:
+            top_correct.append(test_ds[top_confidence_id]['text'])
+
+    with open('\\report\\files\\misclassified_samples.txt', 'w', encoding='utf8') as f:
+        f.write('\n'.join(top_misclassified))
+
+    with open('\\report\\files\\correct_samples.txt', 'w', encoding='utf8') as f:
+        f.write('\n'.join(top_correct))
 
 if __name__ == "__main__":
     main()

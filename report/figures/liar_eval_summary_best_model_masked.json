@@ -1,0 +1,9 @@
+{
+  "run_tag": "best_model",
+  "model_dir": "model_weights\\BEST\\best_model",
+  "max_length": 128,
+  "metrics": {
+    "accuracy": 0.26890101325019483,
+    "macro_f1": 0.26237693044561067
+  }
+}

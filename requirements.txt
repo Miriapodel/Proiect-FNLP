@@ -6,3 +6,6 @@ numpy
 scikit-learn
 matplotlib
 tqdm
+
+scipy~=1.17.0
+spacy
